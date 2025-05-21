@@ -2,40 +2,42 @@ cleanupList <- function(aList,
                         outter = FALSE, 
                         inner = TRUE, 
                         cleanEmpty = FALSE, 
-                        nullEmpty = TRUE){
-  if (inner){
-    cleanedList1 <- lapply(aList, function(innerList) {
+                        nullEmpty = TRUE) {
+  # Step 1: Deep copy input once (protect spatial data integrity)
+  tempList <- copy(aList)
+  
+  # Step 2: Inner-level NULL removal (preserve NULL elements)
+  if (inner) {
+    tempList <- lapply(tempList, function(innerList) {
+      if (is.null(innerList)) return(NULL)
       Filter(Negate(is.null), innerList)
     })
-  } else {
-    cleanedList1 <- copy(aList)
-  }
-  if (outter){
-    cleanedList2 <- Filter(Negate(is.null), cleanedList1)
-  } else {
-    cleanedList2 <- copy(cleanedList1)
   }
   
-  if (nullEmpty){
-    cleanedListFinal1 <- lapply(cleanedList2, function(x) {
+  # Step 3: Top-level NULL removal
+  if (outter) {
+    tempList <- Filter(Negate(is.null), tempList)
+  }
+  
+  # Step 4: Convert empty lists to NULL
+  if (nullEmpty) {
+    tempList <- lapply(tempList, function(x) {
       if (is.list(x) && length(x) == 0) {
-        # If it is, return NULL
-        return(NULL)
-        } else {
-        # Otherwise, return the element unchanged
-        return(x)
+        NULL
+      } else {
+        x
       }
-    })  } else {
-    cleanedListFinal1 <- copy(cleanedList2)
+    })
   }
   
-  if (cleanEmpty){
-    cleanedListFinal <- Filter(function(x) {
-      # Keep the element if it's NOT (a list AND has length 0)
-      ! (is.list(x) && length(x) == 0)
-    }, cleanedList2)
-  } else {
-    cleanedListFinal <- copy(cleanedList2)
+  # Step 5: Remove empty-list and NULL elements if requested
+  if (cleanEmpty) {
+    tempList <- Filter(function(x) {
+      !((is.list(x) && length(x) == 0) || is.null(x))
+    }, tempList)
   }
-  return(cleanedListFinal)
+  
+  # Final: Deep copy before returning (protect modified list)
+  result <- copy(tempList)
+  return(result)
 }
