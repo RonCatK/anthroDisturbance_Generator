@@ -18,7 +18,8 @@ clusterLines <- function(Lines, distThreshold = 5000,
   
   xy <- geom(centroids)
   
-  D <- dist(data.frame(rownames = centroids$individualID, 
+  D <- dist(data.frame(
+                       #rownames = centroids$individualID, # removed since not used
                        x = xy[,"x"],
                        y = xy[,"y"]))
   chc <- hclust(D, method="complete")
@@ -38,29 +39,33 @@ clusterLines <- function(Lines, distThreshold = 5000,
   n_cores <- detectCores()
 
   if (runInParallel) {
-    # How many cores does your CPU have
-    # Register cluster
-    cluster <- makeCluster(min(n_cores - 1, totalLineClusters))
-    registerDoParallel(cluster)
-    foreach(i = unique(Lines$cluster)) %dopar% {
-      ### For messaging purposes
-      currPerc <- round(100*(i/totalLineClusters), 2)
-      currPercOfAll <- round(100*(currPotential/totPotential), 2)
-      if (currPerc %% 10 == 0) {
-        message(paste0("Information for Potential layer ", currPotential, 
-                   " (", currPercOfAll, "%) extracted: ", currPerc,"% done"))
-      }
-      Lines[Lines$cluster == i, "Pot_Clus"] <- paste0(unique(Lines[Lines$cluster == i,]$Potential),
-                                                               "_",i)
-      Lines[Lines$cluster == i, "calculatedLength"] <- perim(Lines[Lines$cluster == i, ])
-      # Lines[Lines$cluster == i, "totalLines"] <- nrow(Lines[Lines$cluster == i, ])
-      angles <- numeric(NROW(Lines[Lines$cluster == i,]))
-      for (ii in 1:length(angles)) {
-        angles[ii] <- calculateLineAngle(Lines[Lines$cluster == i,][ii, ])
-      }
-      Lines[Lines$cluster == i, "angles"] <- angles
-    } # End of cluster
-    stopCluster(cl = cluster)
+    totalLineClusters <- length(unique(Lines$cluster))
+    n_cores <- parallel::detectCores()
+    cluster <- parallel::makeCluster(max(1, min(n_cores - 1, totalLineClusters)), type="PSOCK")
+    # load terra on each worker
+    parallel::clusterEvalQ(cluster, library(terra))
+    # export everything the workers need
+    parallel::clusterExport(cluster,
+                            varlist = c("Lines",
+                                        "calculateLineAngle",
+                                        "totalLineClusters",
+                                        "currPotential",
+                                        "totPotential"),
+                            envir = globalenv())
+    doParallel::registerDoParallel(cluster)
+    on.exit(parallel::stopCluster(cluster), add=TRUE)
+    
+    chunks <- foreach(i = unique(Lines$cluster),
+                      .packages = "terra") %dopar% {
+                        sub <- Lines[Lines$cluster == i, ]
+                        sub$Pot_Clus        <- paste0(unique(sub$Potential), "_", i)
+                        sub$calculatedLength   <- perim(sub)
+                        sub$angles          <- vapply(seq_len(nrow(sub)), function(j) {
+                          calculateLineAngle(sub[j, ])
+                        }, numeric(1))
+                        sub
+                      }
+    Lines <- do.call(rbind, chunks)
     
   } else {
     for (i in unique(Lines$cluster)){
