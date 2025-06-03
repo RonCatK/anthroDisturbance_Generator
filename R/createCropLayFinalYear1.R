@@ -32,26 +32,33 @@ createCropLayFinalYear1 <- function(Lay, potLayTopValid, runClusteringInParallel
   overlapMatrix <- overlapMatrix[, .(id.1 = pmin(id.1, id.2), id.2 = pmax(id.1, id.2))] 
   overlapMatrix <- unique(overlapMatrix) # Remove duplicates
   
-  to_remove <- numeric()
-  for (i in 1:nrow(overlapMatrix)) {
-    if (i %in% c(1, 1000)) message(paste0("Feature ", i, " of ", nrow(overlapMatrix)))
-    if (i %% 10000 == 0) message(paste0("Feature ", i, " of ", nrow(overlapMatrix)))
-    angle1 <- calculateLineAngle(cropLay[overlapMatrix[i,"id.1"]])
-    angle2 <- calculateLineAngle(cropLay[overlapMatrix[i,"id.2"]])
-    if (round(angle1, 4) != round(angle2, 4)){
+  to_remove <- integer()
+  for (i in seq_len(nrow(overlapMatrix))) {
+    angle1 <- calculateLineAngle(cropLay[overlapMatrix[i, "id.1"]])
+    angle2 <- calculateLineAngle(cropLay[overlapMatrix[i, "id.2"]])
+    
+    # New guard: skip pairs if angle is NA
+    if (is.na(angle1) || is.na(angle2)) 
       next
-      # If different angles, they intersect but don't overlap
+    
+    if (round(angle1, 4) != round(angle2, 4)) {
+      next
     } else {
-      # If they overlap, by how much? We should exclude the shortest
-      line1 <- perim(cropLay[overlapMatrix[i,"id.1"]])
-      line2 <- perim(cropLay[overlapMatrix[i,"id.2"]])
+      line1 <- perim(cropLay[overlapMatrix[i, "id.1"]])
+      line2 <- perim(cropLay[overlapMatrix[i, "id.2"]])
       smallest <- if (line1 > line2) overlapMatrix[i, id.2] else overlapMatrix[i, id.1]
       to_remove <- c(to_remove, smallest)
     }
   }
+  if (length(to_remove) > 0) {
+    cropLay <- cropLay[-unique(to_remove), ]
+  }
+  
   toc()
   
-  cropLay <- cropLay[-to_remove, ]
+  if (length(to_remove) > 0) {
+    cropLay <- cropLay[-unique(to_remove), ]
+  }
   ###### TO REMOVE OVERLAPPING
   
   # Loop through the potentials, and make clusters
