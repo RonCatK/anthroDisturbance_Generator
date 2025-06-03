@@ -12,7 +12,6 @@ clusterLines <- function(Lines, distThreshold = 5000,
                          currPotential, totPotential,
                          plotClusterDiagnostic = FALSE,
                          runInParallel){
-  
   # If fewer than 2 lines, skip clustering and assign default cluster
   if (nrow(Lines) < 2) {
     if (nrow(Lines) == 0) return(Lines)
@@ -31,79 +30,54 @@ clusterLines <- function(Lines, distThreshold = 5000,
   
   # Calculate the centroids of each line
   centroids <- centroids(Lines)
-  
   xy <- geom(centroids)
-  
-  D <- dist(data.frame(
-    #rownames = centroids$individualID, # removed since not used
-    x = xy[,"x"],
-    y = xy[,"y"]))
-  chc <- hclust(D, method="complete")
-  # Distance with a 5km threshold as default  
-  chc.d <- cutree(chc, h=distThreshold)
-  if (plotClusterDiagnostic){
+  D <- dist(data.frame(x = xy[, "x"], y = xy[, "y"]))
+  chc <- hclust(D, method = "complete")
+  # Distance threshold clustering
+  chc.d <- cutree(chc, h = distThreshold)
+  if (plotClusterDiagnostic) {
     tb <- as.data.table(table(chc.d))
     plot(tb$chc.d, tb$N, xlab = "Number of Clusters", ylab = "Number of Lines")
   }
   Lines$cluster <- chc.d
-  ## Plotting:
-  # LinesSF <- st_as_sf(Lines)
-  # LinesSFc <- LinesSF[, "cluster"]
-  # plot(LinesSFc, col = rainbow(length(unique(LinesSFc$cluster))))
-  
-  totalLineClusters <- length(unique(Lines$cluster))  ### For messaging purposes
-  n_cores <- detectCores()
+  totalLineClusters <- length(unique(Lines$cluster))
   
   if (runInParallel) {
     totalLineClusters <- length(unique(Lines$cluster))
     n_cores <- parallel::detectCores()
-    cluster <- parallel::makeCluster(max(1, min(n_cores - 1, totalLineClusters)), type="PSOCK")
-    # load terra on each worker
+    cluster <- parallel::makeCluster(max(1, min(n_cores - 1, totalLineClusters)), type = "PSOCK")
     parallel::clusterEvalQ(cluster, library(terra))
-    # export everything the workers need
     parallel::clusterExport(cluster,
-                            varlist = c("Lines",
-                                        "calculateLineAngle",
-                                        "totalLineClusters",
-                                        "currPotential",
-                                        "totPotential"),
+                            varlist = c("Lines", "calculateLineAngle", "totalLineClusters", "currPotential", "totPotential"),
                             envir = globalenv())
     doParallel::registerDoParallel(cluster)
-    on.exit(parallel::stopCluster(cluster), add=TRUE)
+    on.exit(parallel::stopCluster(cluster), add = TRUE)
     
-    chunks <- foreach(i = unique(Lines$cluster),
-                      .packages = "terra") %dopar% {
-                        sub <- Lines[Lines$cluster == i, ]
-                        sub$Pot_Clus        <- paste0(unique(sub$Potential), "_", i)
-                        sub$calculatedLength   <- perim(sub)
-                        sub$angles          <- vapply(seq_len(nrow(sub)), function(j) {
-                          calculateLineAngle(sub[j, ])
-                        }, numeric(1))
-                        sub
-                      }
+    chunks <- foreach(i = unique(Lines$cluster), .packages = "terra") %dopar% {
+      sub <- Lines[Lines$cluster == i, ]
+      sub$Pot_Clus <- paste0(unique(sub$Potential), "_", i)
+      sub$calculatedLength <- perim(sub)
+      sub$angles <- vapply(seq_len(nrow(sub)), function(j) calculateLineAngle(sub[j, ]), numeric(1))
+      sub
+    }
     Lines <- do.call(rbind, chunks)
-    
   } else {
-    for (i in unique(Lines$cluster)){
-      ### For messaging purposes
-      currPerc <- round(100*(i/totalLineClusters), 2)
-      currPercOfAll <- round(100*(currPotential/totPotential), 2)
+    for (i in unique(Lines$cluster)) {
+      currPerc <- round(100 * (i / totalLineClusters), 2)
+      currPercOfAll <- round(100 * (currPotential / totPotential), 2)
       if (currPerc %% 10 == 0) {
-        message(paste0("Information for Potential layer ", currPotential, 
-                       " (", currPercOfAll, "%) extracted: ", currPerc,"% done"))
+        message(paste0("Information for Potential layer ", currPotential,
+                       " (", currPercOfAll, "%) extracted: ", currPerc, "% done"))
       }
-      ### END For messaging purposes
-      Lines[Lines$cluster == i, "Pot_Clus"] <- paste0(unique(Lines[Lines$cluster == i,]$Potential),
-                                                      "_",i)
-      Lines[Lines$cluster == i, "calculatedLength"] <- perim(Lines[Lines$cluster == i, ])
-      # Lines[Lines$cluster == i, "totalLines"] <- nrow(Lines[Lines$cluster == i, ])
-      angles <- numeric(NROW(Lines[Lines$cluster == i,]))
-      for (ii in 1:length(angles)) {
-        angles[ii] <- calculateLineAngle(Lines[Lines$cluster == i,][ii, ])
+      idx <- which(Lines$cluster == i)
+      Lines[idx, "Pot_Clus"] <- paste0(unique(Lines[idx, ]$Potential), "_", i)
+      Lines[idx, "calculatedLength"] <- perim(Lines[idx, ])
+      angles <- numeric(length(idx))
+      for (ii in seq_along(idx)) {
+        angles[ii] <- calculateLineAngle(Lines[idx[ii], ])
       }
-      Lines[Lines$cluster == i, "angles"] <- angles
-    } # End of cluster
-    
-  }  
+      Lines[idx, "angles"] <- angles
+    }
+  }
   return(Lines)
 }
