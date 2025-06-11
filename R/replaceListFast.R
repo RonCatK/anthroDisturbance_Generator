@@ -39,8 +39,9 @@ replaceListFast <- function(disturbanceList,
         currDist <- upToDate[[layName]]
         if (all(!is.null(currDist),
                 !"createdInSimulationTime" %in% names(currDist),
-                is(currDist, "SpatVector")))
+                is(currDist, "SpatVector"))) {
           currDist[["createdInSimulationTime"]] <- currentTime
+        }
         # The only problem is then the ones that are enlarging. We need to pass the table here too to detect
         # which ones need to just be replaced. In the current version of the module, this is the case of
         # settlements. So here we would look for any "enlarged and just replace if it is"
@@ -48,7 +49,7 @@ replaceListFast <- function(disturbanceList,
         shouldReplace <- disturbanceParameters[dataName == Sector &
                                                  disturbanceOrigin == layName &
                                                  disturbanceEnd == "",
-                                               disturbanceType] == "Enlarging"
+                                                 disturbanceType] == "Enlarging"
         onlyReplace <- isTRUE(shouldReplace)
         if (onlyReplace) {
           message(paste0("Disturbance layer ", layName, " for ", Sector, " is of type Enlarging. ",
@@ -56,14 +57,28 @@ replaceListFast <- function(disturbanceList,
                          " previous layer."))
           return(currDist)
         }
+        # === EARLIER CLASS VALIDATION ===
+        validClasses <- c("SpatVector", "SpatRaster", "RasterLayer")
         # Currently disturbed
         if (all(Sector == "oilGas",
                 layName == "seismicLines",
                 !is.null(updatedLayersAll$seismicLinesFirstYear))) {
           pastDist <- updatedLayersAll$seismicLinesFirstYear
-          
         } else {
           pastDist <- disturbanceList[[INDEX]][[layName]]
+        }
+        # Validate both objects before any processing
+        if (!is.null(pastDist)) {
+          if (!inherits(pastDist, validClasses)) {
+            stop("pastDist for '", Sector, "::", layName, "' is invalid class: ",
+                 paste(class(pastDist), collapse = ", "))
+          }
+        }
+        if (!is.null(currDist)) {
+          if (!inherits(currDist, validClasses)) {
+            stop("currDist for '", Sector, "::", layName, "' is invalid class: ",
+                 paste(class(currDist), collapse = ", "))
+          }
         }
         if (all(!is.null(pastDist),
                 !"createdInSimulationTime" %in% names(pastDist),
@@ -83,13 +98,15 @@ replaceListFast <- function(disturbanceList,
             if (classPast %in% c("RasterLayer", "SpatRaster")) {
               pastDist <- as.polygons(pastDist)
               # preserve time stamp if missing
-              if (!"createdInSimulationTime" %in% names(pastDist))
+              if (!"createdInSimulationTime" %in% names(pastDist)) {
                 pastDist[["createdInSimulationTime"]] <- currentTime - 10
+              }
             }
             if (classCurr %in% c("RasterLayer", "SpatRaster")) {
               currDist <- as.polygons(currDist)
-              if (!"createdInSimulationTime" %in% names(currDist))
+              if (!"createdInSimulationTime" %in% names(currDist)) {
                 currDist[["createdInSimulationTime"]] <- currentTime
+              }
             }
             unified <- rbind(pastDist, currDist)
             # ensure a Class column
@@ -140,7 +157,7 @@ replaceListFast <- function(disturbanceList,
     }
     # Need to unlist whatever is listed here
     if (length(potentialLayName) > 0) {
-      message(paste0("Appending potantial layer back to '", Sector, "' sector."))
+      message(paste0("Appending potential layer back to '", Sector, "' sector."))
       # If we have potential Layers, put them in the list with the internal layers
       internalLays <- append(disturbanceList[[Sector]][potentialLayName], internalLays)
     }
