@@ -1,11 +1,21 @@
 replaceList <- function(disturbanceList, 
                         updatedLayers){
   externalLays <- lapply(names(disturbanceList), function(Sector) {
+    # If no updates for this sector, return original layers
+    if (!(Sector %in% names(updatedLayers))) {
+      return(disturbanceList[[Sector]])
+    }
     # Layers available for updates
     upToDate <- updatedLayers[which(names(updatedLayers) == Sector)] # As I have repeated names (i.e., for 
     # energy I have 2 layers named Energy, one for windTurbines and one for powerLines), I need a 
     # more specific approach to select the layers. Just referencing to the Sector leaves the second
     # one out.
+    
+    # If there's exactly one update and it's NULL, return original sub-list
+    if (length(upToDate) == 1 && is.null(upToDate[[1]])) {
+      return(disturbanceList[[Sector]])
+    }
+    
     if (is.null(unlist(upToDate, use.names = FALSE))){
       layName <- names(upToDate)
       # Currently disturbed NULL
