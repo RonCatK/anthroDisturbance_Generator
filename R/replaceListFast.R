@@ -1,27 +1,27 @@
-replaceListFast <- function(disturbanceList, 
-                        updatedLayersAll, 
-                        currentTime,
-                        disturbanceParameters){
+replaceListFast <- function(disturbanceList,
+                            updatedLayersAll,
+                            currentTime,
+                            disturbanceParameters) {
   
   updatedLayers <- updatedLayersAll$individuaLayers
   correctMatching <- match(names(updatedLayers), names(disturbanceList))
   cleanedNames <- names(disturbanceList)[unique(sort(correctMatching))]
   externalLays <- lapply(unique(sort(correctMatching)), function(INDEX) {
     Sector <- names(disturbanceList)[INDEX]
-    updatedLayerIndex <- which(correctMatching==INDEX)
-    # Each sector might have more than one disturbance type. We don't need to 
-    # aggregate them, just rbind. We can put a time marker on the past (if they don't have) 
+    updatedLayerIndex <- which(correctMatching == INDEX)
+    # Each sector might have more than one disturbance type. We don't need to
+    # aggregate them, just rbind. We can put a time marker on the past (if they don't have)
     # and new layers: createdInSimulationTime
     # Get all potential names. Will be used internally and externally in the lapply
-    potentialLayName <- names(disturbanceList[[Sector]])[grepl(x = names(disturbanceList[[Sector]]), 
+    potentialLayName <- names(disturbanceList[[Sector]])[grepl(x = names(disturbanceList[[Sector]]),
                                                                pattern = "potential")]
     # Layers available for updates
-    upToDate <- updatedLayers[updatedLayerIndex] 
-    # As I have repeated names (i.e., for 
-    # energy I have 2 layers named Energy, one for windTurbines and one for powerLines), I need a 
+    upToDate <- updatedLayers[updatedLayerIndex]
+    # As I have repeated names (i.e., for
+    # energy I have 2 layers named Energy, one for windTurbines and one for powerLines), I need a
     # more specific approach to select the layers. Just referencing to the Sector leaves the second
     # one out.
-    if (is.null(unlist(upToDate, use.names = FALSE))){
+    if (is.null(unlist(upToDate, use.names = FALSE))) {
       # layName <- names(upToDate)
       # # Currently disturbed NULL
       # unified <- disturbanceList[[Sector]][[layName]]
@@ -30,33 +30,33 @@ replaceListFast <- function(disturbanceList,
       names(upToDate) <- NULL # We need to remove the SECTOR names and unlist in case these two lists repeat the names.
       upToDate <- unlist(upToDate)
       # Merge the updated lists with the current disturbance ones:
-      if (is.null(names(upToDate))){
-        message(paste0("names(upToDate) for SECTOR = ",Sector," is NULL. Entering browser mode..."))
+      if (is.null(names(upToDate))) {
+        message(paste0("names(upToDate) for SECTOR = ", Sector, " is NULL. Entering browser mode..."))
         browser()
       }
-      internalLays <- lapply(names(upToDate), function(layName){
+      internalLays <- lapply(names(upToDate), function(layName) {
         # Updated disturbances
         currDist <- upToDate[[layName]]
         if (all(!is.null(currDist),
                 !"createdInSimulationTime" %in% names(currDist),
                 is(currDist, "SpatVector")))
-          currDist[["createdInSimulationTime"]] <- currentTime        
+          currDist[["createdInSimulationTime"]] <- currentTime
         # The only problem is then the ones that are enlarging. We need to pass the table here too to detect
         # which ones need to just be replaced. In the current version of the module, this is the case of
-        # settlements. So here we would look for any "enlarged and just replace if it is" 
-        # If an enlarging, replace and move on 
+        # settlements. So here we would look for any "enlarged and just replace if it is"
+        # If an enlarging, replace and move on
         shouldReplace <- disturbanceParameters[dataName == Sector &
                                                  disturbanceOrigin == layName &
                                                  disturbanceEnd == "",
                                                disturbanceType] == "Enlarging"
         onlyReplace <- isTRUE(shouldReplace)
-        if (onlyReplace){
-          message(paste0("Disturbance layer ", layName," for ", Sector, " is of type Enlarging. ",
+        if (onlyReplace) {
+          message(paste0("Disturbance layer ", layName, " for ", Sector, " is of type Enlarging. ",
                          "This means it contains previous disturbances and can just replace the",
                          " previous layer."))
           return(currDist)
         }
-        # Currently disturbed 
+        # Currently disturbed
         if (all(Sector == "oilGas",
                 layName == "seismicLines",
                 !is.null(updatedLayersAll$seismicLinesFirstYear))) {
@@ -67,7 +67,7 @@ replaceListFast <- function(disturbanceList,
         }
         if (all(!is.null(pastDist),
                 !"createdInSimulationTime" %in% names(pastDist),
-                is(pastDist, "SpatVector"))){
+                is(pastDist, "SpatVector"))) {
           pastDist[["createdInSimulationTime"]] <- currentTime - 10
         }
         classPast <- class(pastDist)
@@ -76,67 +76,63 @@ replaceListFast <- function(disturbanceList,
                 is.null(currDist))) { # If one is missing, just return the other
           unified <- c(pastDist, currDist)[[1]]
         } else { # Need to merge them!
-          if (any(classPast != classCurr,
-                  classPast %in% c("RasterLayer", "SpatRaster"),
-                  classCurr %in% c("RasterLayer", "SpatRaster"))){ # Objects are of different classes
-            # This is likely for generated stuff (raster) from polygons of potential
-            print("Objects are of different classes. Harmonizing...")
-            if (any(classPast %in% c("RasterLayer", "SpatRaster"),
-                    classCurr %in% c("RasterLayer", "SpatRaster"))) {
-              # [UPDATE] Althought it is considerably quicker to convert polys to rasters than the other way around
-              # I don't expect this to happen with the provided dataset. So here is only for new datasets used.
-              # Convert the spatRaster into spatVector
-              if (classPast == "SpatRaster"){
-                pastDist <- as.polygons(pastDist)
+          # === Harmonize any rasters to vectors, then rbind, then add Class ===
+          if (any(classPast %in% c("RasterLayer", "SpatRaster"),
+                  classCurr %in% c("RasterLayer", "SpatRaster"))) {
+            # Convert both sides that are rasters into polygons
+            if (classPast %in% c("RasterLayer", "SpatRaster")) {
+              pastDist <- as.polygons(pastDist)
+              # preserve time stamp if missing
+              if (!"createdInSimulationTime" %in% names(pastDist))
                 pastDist[["createdInSimulationTime"]] <- currentTime - 10
-              } else {
-                currDist <- as.polygons(currDist)
-                currDist[["createdInSimulationTime"]] <- currentTime
-              }
-              unified <- rbind(pastDist, currDist)
-            } else {
-              stop(paste0("New case of combination of past and present layers. ",
-                          "Past layer of class ", class(pastDist), 
-                          " while new layer of class ", class(currDist),
-                          ". Code development is needed!"))
             }
-          } else { 
+            if (classCurr %in% c("RasterLayer", "SpatRaster")) {
+              currDist <- as.polygons(currDist)
+              if (!"createdInSimulationTime" %in% names(currDist))
+                currDist[["createdInSimulationTime"]] <- currentTime
+            }
+            unified <- rbind(pastDist, currDist)
+            # ensure a Class column
+            if (!"Class" %in% names(unified)) {
+              unified[["Class"]] <- layName
+            }
+          } else {
             # Objects share the same class and vectors
-              if (geomtype(pastDist) != geomtype(currDist)) { # Works only if both are vectors!
-                # Make sure that all are buffered, even if just a little 
-                wid <- 0.0000000003
-                if (geomtype(pastDist) != "polygons"){
+            if (geomtype(pastDist) != geomtype(currDist)) { # Works only if both are vectors!
+              # Make sure that all are buffered, even if just a little
+              wid <- 0.0000000003
+              if (geomtype(pastDist) != "polygons") {
+                pastDistBuf <- terra::buffer(pastDist, width = wid)
+                while (any(is.na(as.vector(ext(pastDistBuf))))) {
+                  message(paste0("Minimum buffering size current disturbances (", wid,
+                                 ") failed. Increasing buffering size..."))
+                  wid <- wid + wid
                   pastDistBuf <- terra::buffer(pastDist, width = wid)
-                  while (any(is.na(as.vector(ext(pastDistBuf))))){
-                    message(paste0("Minimum buffering size current disturbances (", wid,
-                                   ") failed. Increasing buffering size..."))
-                    wid <- wid + wid
-                    pastDistBuf <- terra::buffer(pastDist, width = wid)
-                  }
-                  pastDist <- pastDistBuf
                 }
-                if (geomtype(currDist) != "polygons"){
-                  currDistBuf <- terra::buffer(currDist, width = wid)
-                  while (any(is.na(as.vector(ext(currDistBuf))))){
-                    message(paste0("Minimum buffering size for past disturbances (", wid,
-                                   ") failed. Increasing buffering size..."))
-                    wid <- wid + wid
-                    currDistBuf <- terra::buffer(currDist, width = wid)
-                  }
-                  currDist <- currDistBuf
-                }
+                pastDist <- pastDistBuf
               }
-                  tictoc::tic(paste0("Elapsed time for merging ", layName, " (", Sector, ")"))
-                  unified <- rbind(pastDist, currDist) # Doubles the features when we need to overlay/unify these
-                  # But that is not a problem per se. In fact, we might want to see all geometries!
-                  if (!"Class" %in% names(currDist)){
-                    if ("Class" %in% names(pastDist)){
-                      unified[["Class"]] <- as.character(unique(pastDist[["Class"]]))
-                    } else {
-                      unified[["Class"]] <- layName
-                    }
-                  }
-                  tictoc::toc()
+              if (geomtype(currDist) != "polygons") {
+                currDistBuf <- terra::buffer(currDist, width = wid)
+                while (any(is.na(as.vector(ext(currDistBuf))))) {
+                  message(paste0("Minimum buffering size for past disturbances (", wid,
+                                 ") failed. Increasing buffering size..."))
+                  wid <- wid + wid
+                  currDistBuf <- terra::buffer(currDist, width = wid)
+                }
+                currDist <- currDistBuf
+              }
+            }
+            tictoc::tic(paste0("Elapsed time for merging ", layName, " (", Sector, ")"))
+            unified <- rbind(pastDist, currDist) # Doubles the features when we need to overlay/unify these
+            # But that is not a problem per se. In fact, we might want to see all geometries!
+            if (!"Class" %in% names(currDist)) {
+              if ("Class" %in% names(pastDist)) {
+                unified[["Class"]] <- as.character(unique(pastDist[["Class"]]))
+              } else {
+                unified[["Class"]] <- layName
+              }
+            }
+            tictoc::toc()
           }
         }
         return(unified)
